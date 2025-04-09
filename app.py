@@ -119,22 +119,39 @@ if archivo:
     except Exception as e:
         st.error(f"❌ Error al cargar los modelos o realizar la predicción: {e}")
 
-# --- Agradecimientos e instrucciones ---
+✅ Fragmento agregado al final del app.py:
+python
+Copiar
+Editar
+# --- Agradecimientos, descripción e instrucciones ---
 st.markdown("---")
+st.markdown("### 🧠 Proyecto")
+st.markdown("""
+**Predicción y Estrategias Basadas en Ciencia de Datos para la Gestión de Riesgos Respiratorios Asociados a la Contaminación Atmosférica en el corredor industrial del bajío**
+
+Esta herramienta permite procesar automáticamente datos ambientales de entrada para generar predicciones de contaminantes atmosféricos (PM10) y sus posibles efectos en salud (IRAS en menores de 5 años) usando modelos LSTM previamente entrenados.
+
+Además, la app permite:
+- Visualizar resultados por fechas
+- Exportar los resultados predichos
+- Comparar predicciones con valores reales
+- Apoyar la toma de decisiones y estrategias de gestión de riesgos
+
+""")
+
 st.markdown("### 🤝 Agradecimientos")
 st.markdown("""
-Esta app fue desarrollada como parte del proyecto de modelado predictivo ambiental y salud.  
-Agradecemos el apoyo de CIATEC A.C. y de todos los colaboradores que hicieron posible este trabajo.
+Esta app fue desarrollada como parte del proyecto mencionado, con el apoyo del **Instituto de Innovación, Ciencia y Emprendimiento para la Competitividad** y el equipo del CIATEC A.C.
 
 **Desarrollador:** Dr. Juan José Quiroz  
 **Institución:** CIATEC A.C.  
-**Contacto:** [juan.quiroz@ciatec.mx](mailto:juan.quiroz@ciatec.mx)
+**Contacto:** [jquiroz@ciatec.mx](mailto:jquiroz@ciatec.mx)
 """)
 
 st.markdown("### ℹ️ Instrucciones de uso")
 st.markdown("""
 1. Sube un archivo Excel con tus datos de entrada (incluyendo columna `fecha` si deseas visualización temporal).
-2. La app aplicará los modelos entrenados para predecir valores de PM10 e IRAS.
+2. La app aplicará modelos LSTM para predecir valores de PM10 e IRAS.
 3. Visualiza los resultados en tabla y gráficos interactivos.
 4. Descarga el archivo con resultados si lo necesitas.
 """)
