@@ -3,21 +3,29 @@ import pandas as pd
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from io import BytesIO
 
 st.set_page_config(page_title="Predicción PM10 e IRAS", layout="wide")
 
 st.title("📊 Predicción de PM10 e IRAS")
 st.markdown("Sube tu archivo Excel de entrada para predecir PM10 e IRAS (usa modelos entrenados).")
 
+# --- Cargar modelos con manejo de errores ---
 @st.cache_resource
 def cargar_modelos():
-    modelo_pm10 = torch.load("modelo_final_PM10.pth", map_location=torch.device("cpu"))
-    modelo_iras = torch.load("modelo_final_IRAS_1_4.pth", map_location=torch.device("cpu"))
-    return modelo_pm10.eval(), modelo_iras.eval()
+    try:
+        modelo_pm10 = torch.load("modelo_final_PM10.pth", map_location=torch.device("cpu"))
+        modelo_iras = torch.load("modelo_final_IRAS_1_4.pth", map_location=torch.device("cpu"))
+        return modelo_pm10.eval(), modelo_iras.eval()
+    except FileNotFoundError as e:
+        st.error(f"❌ No se encontró el archivo del modelo: {e}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ Error cargando los modelos: {e}")
+        st.stop()
 
 modelo_pm10, modelo_iras = cargar_modelos()
 
+# --- Subir archivo Excel ---
 archivo = st.file_uploader("📎 Sube tu archivo Excel de entrada", type=["xlsx"])
 
 if archivo:
@@ -27,6 +35,7 @@ if archivo:
     st.dataframe(df.head())
 
     try:
+        # Procesamiento
         X = df.drop(columns=["fecha"]) if "fecha" in df.columns else df
         entradas = torch.tensor(X.values).float()
 
@@ -39,6 +48,7 @@ if archivo:
 
         st.write("## 📈 Predicciones:")
 
+        # Filtros por fecha
         if "fecha" in df_resultado.columns:
             df_resultado["fecha"] = pd.to_datetime(df_resultado["fecha"])
             col1, col2 = st.columns(2)
@@ -51,14 +61,16 @@ if archivo:
                    (df_resultado["fecha"] <= pd.to_datetime(fecha_fin))
             df_resultado = df_resultado[mask]
 
+        # Mostrar tabla final
         st.dataframe(df_resultado)
 
-        output_csv = df_resultado.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Descargar predicciones (.csv)", output_csv, file_name="predicciones_resultado.csv")
+        # Descargar como CSV
+        csv_data = df_resultado.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Descargar predicciones (.csv)", csv_data, file_name="predicciones_resultado.csv")
 
+        # Gráfico
         if "fecha" in df_resultado.columns:
             st.write("### 📊 Gráfica PM10 vs IRAS")
-
             fig, ax1 = plt.subplots(figsize=(10, 4))
 
             ax1.plot(df_resultado["fecha"], df_resultado["Pred_PM10"], color='tab:blue', label='PM10')
