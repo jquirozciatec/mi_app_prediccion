@@ -1,110 +1,99 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[ ]:
-
-
 import streamlit as st
 import pandas as pd
-import numpy as np
 import torch
-from sklearn.preprocessing import MinMaxScaler
+import numpy as np
 import matplotlib.pyplot as plt
-import torch.nn as nn
+from io import BytesIO
 
-# ---------------- MODELOS ----------------
-class PM10Model(nn.Module):
-    def __init__(self, input_dim):
-        super(PM10Model, self).__init__()
-        self.lstm = nn.LSTM(input_dim, 158, num_layers=2, batch_first=True, dropout=0.299)
-        self.fc1 = nn.Linear(158, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 1)
+st.set_page_config(page_title="Predicción PM10 e IRAS", layout="wide")
 
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        x = out[:, -1, :]
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+st.title("📊 Predicción de PM10 e IRAS")
+st.markdown("Sube tu archivo Excel de entrada para predecir PM10 e IRAS (usa modelos entrenados).")
 
-class IRASModel(nn.Module):
-    def __init__(self, input_dim):
-        super(IRASModel, self).__init__()
-        self.lstm = nn.LSTM(input_dim, 138, num_layers=1, batch_first=True)
-        self.fc1 = nn.Linear(138, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 1)
+@st.cache_resource
+def cargar_modelos():
+    modelo_pm10 = torch.load("modelo_final_PM10.pth", map_location=torch.device("cpu"))
+    modelo_iras = torch.load("modelo_final_IRAS_1_4.pth", map_location=torch.device("cpu"))
+    return modelo_pm10.eval(), modelo_iras.eval()
 
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        x = out[:, -1, :]
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+modelo_pm10, modelo_iras = cargar_modelos()
 
-# ---------------- APP ----------------
-st.title("Predicción de PM10 e IRAS")
+archivo = st.file_uploader("📎 Sube tu archivo Excel de entrada", type=["xlsx"])
 
-uploaded_file = st.file_uploader("Sube tu archivo Excel de entrada", type=["xlsx"])
+if archivo:
+    df = pd.read_excel(archivo)
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-    df = df.dropna()
+    st.write("### Vista previa del archivo:")
+    st.dataframe(df.head())
 
-    if 'fecha' in df.columns:
-        df["fecha"] = pd.to_datetime(df["fecha"])
-        fechas = df["fecha"].iloc[6:].values
-    else:
-        fechas = pd.date_range(start="2025-01-01", periods=len(df), freq='D')[6:]
+    try:
+        X = df.drop(columns=["fecha"]) if "fecha" in df.columns else df
+        entradas = torch.tensor(X.values).float()
 
-    scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df.drop(columns=['fecha'], errors='ignore').values)
+        pred_pm10 = modelo_pm10(entradas).detach().numpy().flatten()
+        pred_iras = modelo_iras(entradas).detach().numpy().flatten()
 
-    def create_sequences(data, window_size):
-        return np.array([data[i:i + window_size] for i in range(len(data) - window_size + 1)])
+        df_resultado = df.copy()
+        df_resultado["Pred_PM10"] = pred_pm10
+        df_resultado["Pred_IRAS_1_4"] = pred_iras
 
-    window_size = 7
-    X_seq = create_sequences(scaled_data, window_size)
-    X_tensor = torch.tensor(X_seq, dtype=torch.float32)
+        st.write("## 📈 Predicciones:")
 
-    device = torch.device("cpu")
-    model_pm10 = PM10Model(input_dim=X_tensor.shape[2]).to(device)
-    model_pm10.load_state_dict(torch.load("modelo_final_PM10.pth", map_location=device))
-    model_pm10.eval()
+        if "fecha" in df_resultado.columns:
+            df_resultado["fecha"] = pd.to_datetime(df_resultado["fecha"])
+            col1, col2 = st.columns(2)
+            with col1:
+                fecha_inicio = st.date_input("Desde:", df_resultado["fecha"].min())
+            with col2:
+                fecha_fin = st.date_input("Hasta:", df_resultado["fecha"].max())
 
-    with torch.no_grad():
-        pred_pm10 = model_pm10(X_tensor).cpu().numpy().flatten()
+            mask = (df_resultado["fecha"] >= pd.to_datetime(fecha_inicio)) & \
+                   (df_resultado["fecha"] <= pd.to_datetime(fecha_fin))
+            df_resultado = df_resultado[mask]
 
-    model_iras = IRASModel(input_dim=X_tensor.shape[2]).to(device)
-    model_iras.load_state_dict(torch.load("modelo_final_IRAS_1_4.pth", map_location=device))
-    model_iras.eval()
+        st.dataframe(df_resultado)
 
-    with torch.no_grad():
-        pred_iras = model_iras(X_tensor).cpu().numpy().flatten()
+        output_csv = df_resultado.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Descargar predicciones (.csv)", output_csv, file_name="predicciones_resultado.csv")
 
-    result_df = df.iloc[window_size - 1:].copy()
-    result_df["Pred_PM10"] = pred_pm10
-    result_df["Pred_IRAS_1_4"] = pred_iras
-    result_df["fecha"] = fechas
+        if "fecha" in df_resultado.columns:
+            st.write("### 📊 Gráfica PM10 vs IRAS")
 
-    st.write("### Predicciones:")
-    st.dataframe(result_df[["fecha", "Pred_PM10", "Pred_IRAS_1_4"]])
+            fig, ax1 = plt.subplots(figsize=(10, 4))
 
-    fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-    if "PM10" in result_df.columns:
-        ax[0].plot(result_df["fecha"], result_df["PM10"], label="PM10 Real", linestyle="--")
-    ax[0].plot(result_df["fecha"], result_df["Pred_PM10"], label="PM10 Predicho")
-    ax[0].set_title("PM10")
-    ax[0].legend()
-    ax[0].grid(True)
+            ax1.plot(df_resultado["fecha"], df_resultado["Pred_PM10"], color='tab:blue', label='PM10')
+            ax1.set_ylabel("PM10", color='tab:blue')
+            ax1.tick_params(axis='y', labelcolor='tab:blue')
 
-    if "IRAS_1_4" in result_df.columns:
-        ax[1].plot(result_df["fecha"], result_df["IRAS_1_4"], label="IRAS Real", linestyle="--")
-    ax[1].plot(result_df["fecha"], result_df["Pred_IRAS_1_4"], label="IRAS Predicho")
-    ax[1].set_title("IRAS 1-4")
-    ax[1].legend()
-    ax[1].grid(True)
+            ax2 = ax1.twinx()
+            ax2.plot(df_resultado["fecha"], df_resultado["Pred_IRAS_1_4"], color='tab:red', label='IRAS')
+            ax2.set_ylabel("IRAS", color='tab:red')
+            ax2.tick_params(axis='y', labelcolor='tab:red')
 
-    st.pyplot(fig)
+            fig.tight_layout()
+            st.pyplot(fig)
 
+    except Exception as e:
+        st.error(f"❌ Error en el procesamiento del archivo: {e}")
+
+# --- Agradecimientos e instrucciones ---
+st.markdown("---")
+st.markdown("### 🤝 Agradecimientos")
+st.markdown("""
+Esta app fue desarrollada como parte del proyecto de modelado predictivo ambiental y salud.  
+Agradecemos el apoyo de CIATEC A.C. y de todos los colaboradores que hicieron posible este trabajo.
+
+**Desarrollador:** Dr. Juan José Quiroz  
+**Institución:** CIATEC A.C.  
+**Contacto:** [juan.quiroz@ciatec.mx](mailto:juan.quiroz@ciatec.mx)
+""")
+
+st.markdown("### ℹ️ Instrucciones de uso")
+st.markdown("""
+1. Sube un archivo Excel con tus datos de entrada (incluyendo columna `fecha` si deseas visualización temporal).
+2. La app aplicará los modelos entrenados para predecir valores de PM10 e IRAS.
+3. Visualiza los resultados en tabla y gráficos interactivos.
+4. Descarga el archivo con resultados si lo necesitas.
+""")
+
+st.caption("© 2025 CIATEC A.C. | App desarrollada con Streamlit")
