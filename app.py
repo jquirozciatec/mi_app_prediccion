@@ -119,10 +119,7 @@ if archivo:
     except Exception as e:
         st.error(f"❌ Error al cargar los modelos o realizar la predicción: {e}")
 
-✅ Fragmento agregado al final del app.py:
-python
-Copiar
-Editar
+
 # --- Agradecimientos, descripción e instrucciones ---
 st.markdown("---")
 st.markdown("### 🧠 Proyecto")
