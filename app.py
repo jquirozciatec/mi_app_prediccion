@@ -15,11 +15,11 @@ st.set_page_config(page_title="Predicción PM10 e IRAS", layout="wide")
 # --- Encabezado con logos grandes ---
 col1, col2, col3 = st.columns([2, 5, 2])
 with col1:
-    st.image("LOGO_CIATEC.png", use_column_width=True)
+    st.image("LOGO_CIATEC.png", use_container_width=True)
 with col2:
     st.title("📊 Predicción de PM10 e IRAS")
 with col3:
-    st.image("LOGO_INNOVACION.webp", use_column_width=True)
+    st.image("LOGO_INNOVACION.webp", use_container_width=True)
 
 # --- Definición de modelos LSTM ---
 class PM10Model(nn.Module):
