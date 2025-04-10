@@ -1,7 +1,10 @@
 streamlit
 pandas
-numpy
 torch
+numpy
 scikit-learn
 matplotlib
-openpyxl
+plotly
+fpdf
+openpyxl  # necesario para leer archivos Excel (.xlsx)
+Pillow     # para trabajar con imágenes

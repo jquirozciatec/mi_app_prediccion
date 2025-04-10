@@ -6,17 +6,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from PIL import Image
+import plotly.express as px
+from fpdf import FPDF
+import base64
 
 st.set_page_config(page_title="Predicción PM10 e IRAS", layout="wide")
 
-# --- Encabezado con logos ---
-col1, col2, col3 = st.columns([1, 6, 1])
+# --- Encabezado con logos grandes ---
+col1, col2, col3 = st.columns([2, 5, 2])
 with col1:
-    st.image("LOGO_CIATEC.png", width=100)
+    st.image("LOGO_CIATEC.png", use_column_width=True)
 with col2:
     st.title("📊 Predicción de PM10 e IRAS")
 with col3:
-    st.image("LOGO_INNOVACION.webp", width=100)
+    st.image("LOGO_INNOVACION.webp", use_column_width=True)
 
 # --- Definición de modelos LSTM ---
 class PM10Model(nn.Module):
@@ -137,22 +140,30 @@ if df is not None:
                 csv_data = result_df.to_csv(index=False).encode("utf-8")
                 st.download_button("📥 Descargar predicciones", csv_data, file_name="predicciones_resultado.csv")
 
-                fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-                if "PM10" in result_df.columns:
-                    ax[0].plot(result_df["fecha"], result_df["PM10"], label="PM10 Real", linestyle="--")
-                ax[0].plot(result_df["fecha"], result_df["Pred_PM10"], label="PM10 Predicho")
-                ax[0].set_title("PM10")
-                ax[0].legend()
-                ax[0].grid(True)
+                # --- Gráficas interactivas con Plotly ---
+                st.subheader("📈 Visualizaciones Interactivas")
+                fig1 = px.line(result_df, x='fecha', y='Pred_PM10', title='PM10 Predicho')
+                st.plotly_chart(fig1)
+                fig2 = px.line(result_df, x='fecha', y='Pred_IRAS_1_4', title='IRAS 1-4 Predicho')
+                st.plotly_chart(fig2)
 
-                if "IRAS_1_4" in result_df.columns:
-                    ax[1].plot(result_df["fecha"], result_df["IRAS_1_4"], label="IRAS Real", linestyle="--")
-                ax[1].plot(result_df["fecha"], result_df["Pred_IRAS_1_4"], label="IRAS Predicho")
-                ax[1].set_title("IRAS 1-4")
-                ax[1].legend()
-                ax[1].grid(True)
-
-                st.pyplot(fig)
+                # --- Exportar informe en PDF ---
+                if st.button("📄 Generar informe PDF"):
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("Arial", size=12)
+                    pdf.cell(200, 10, txt="Informe de Predicción PM10 e IRAS", ln=1, align="C")
+                    pdf.cell(200, 10, txt="Fecha de generación: " + pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'), ln=2, align="L")
+                    pdf.ln(10)
+                    pdf.multi_cell(0, 10, txt="Resumen de predicciones generadas automáticamente por el sistema usando modelos LSTM.")
+                    pdf.output("informe_predicciones.pdf")
+                    with open("informe_predicciones.pdf", "rb") as file:
+                        btn = st.download_button(
+                            label="📥 Descargar informe PDF",
+                            data=file,
+                            file_name="informe_predicciones.pdf",
+                            mime="application/pdf"
+                        )
 
             except Exception as e:
                 st.error(f"❌ Error al cargar los modelos o realizar la predicción: {e}")
@@ -184,10 +195,9 @@ Esta app fue desarrollada como parte del proyecto mencionado, con el apoyo del *
 st.markdown("### ℹ️ Instrucciones de uso")
 st.markdown("""
 1. Sube un archivo Excel con tus datos de entrada (incluyendo columna `fecha` si deseas visualización temporal), o usa el dataset de ejemplo.
-1.1 Si usas verción movil, localiza la flecha del lado izqquierdo superior que desplejas las opciones de paso 1.
 2. Selecciona el tipo de predicción por periodo o estación.
 3. Da clic en "Ejecutar predicción".
-4. Visualiza y descarga tus resultados.
+4. Visualiza y descarga tus resultados o genera un informe PDF.
 """)
 
 st.caption("© 2025 CIATEC A.C. | App desarrollada con Streamlit")
