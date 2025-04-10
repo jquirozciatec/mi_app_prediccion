@@ -44,83 +44,108 @@ class IRASModel(nn.Module):
 def create_sequences(data, window_size):
     return np.array([data[i:i + window_size] for i in range(len(data) - window_size + 1)])
 
-# --- Upload del archivo ---
-archivo = st.file_uploader("📎 Sube tu archivo Excel de entrada", type=["xlsx"])
+# --- Sidebar: carga o selección de datos ---
+st.sidebar.header("📂 Datos de entrada")
+archivo = st.sidebar.file_uploader("Sube tu archivo Excel", type=["xlsx"])
+usar_ejemplo = st.sidebar.checkbox("Usar datos de ejemplo")
 
+# --- Sidebar: selección de periodo ---
+st.sidebar.header("📅 Opciones de predicción")
+opcion_prediccion = st.sidebar.radio(
+    "Selecciona el tipo de análisis",
+    ("Todo el periodo", "Por rango de fechas", "Por estación del año")
+)
+
+df = None
 if archivo:
     df = pd.read_excel(archivo)
+elif usar_ejemplo:
+    df = pd.read_excel("datos_ejemplo.xlsx")  # Archivo de ejemplo disponible localmente
+    st.success("Datos de ejemplo cargados correctamente.")
+
+if df is not None:
     df = df.dropna()
-
     if 'fecha' in df.columns:
-        df["fecha"] = pd.to_datetime(df["fecha"])
-        fechas = df["fecha"].iloc[6:].values
-    else:
-        fechas = pd.date_range(start="2025-01-01", periods=len(df), freq='D')[6:]
+        df['fecha'] = pd.to_datetime(df['fecha'])
 
-    # --- Escalamiento ---
-    scaler = MinMaxScaler()
-    datos = df.drop(columns=["fecha"], errors="ignore")
-    scaled_data = scaler.fit_transform(datos.values)
+        if opcion_prediccion == "Por rango de fechas":
+            fecha_inicio = st.sidebar.date_input("Fecha inicio", df["fecha"].min().date())
+            fecha_fin = st.sidebar.date_input("Fecha fin", df["fecha"].max().date())
+            if fecha_inicio <= fecha_fin:
+                df = df[(df["fecha"] >= pd.to_datetime(fecha_inicio)) & (df["fecha"] <= pd.to_datetime(fecha_fin))]
+            else:
+                st.sidebar.error("⚠️ La fecha de inicio no puede ser mayor que la fecha final.")
 
-    # --- Secuencias LSTM ---
-    window_size = 7
-    X_seq = create_sequences(scaled_data, window_size)
-    X_tensor = torch.tensor(X_seq, dtype=torch.float32)
+        elif opcion_prediccion == "Por estación del año":
+            estacion = st.sidebar.selectbox("Selecciona una estación", ("Primavera", "Verano", "Otoño", "Invierno"))
+            def get_estacion(mes):
+                return (
+                    "Primavera" if mes in [3, 4, 5] else
+                    "Verano" if mes in [6, 7, 8] else
+                    "Otoño" if mes in [9, 10, 11] else
+                    "Invierno"
+                )
+            df['estacion'] = df['fecha'].dt.month.apply(get_estacion)
+            df = df[df['estacion'] == estacion]
 
-    input_dim = X_tensor.shape[2]
-    device = torch.device("cpu")
+    fechas = df['fecha'].iloc[6:].values if 'fecha' in df.columns else pd.date_range(start="2025-01-01", periods=len(df), freq='D')[6:]
 
-    # --- Cargar modelos entrenados (state_dict) ---
-    try:
-        model_pm10 = PM10Model(input_dim=input_dim).to(device)
-        model_pm10.load_state_dict(torch.load("modelo_final_PM10.pth", map_location=device))
-        model_pm10.eval()
+    # --- Predicción al presionar botón ---
+    if st.button("🔍 Ejecutar predicción"):
+        with st.spinner("Procesando y generando predicciones..."):
+            scaler = MinMaxScaler()
+            datos = df.drop(columns=["fecha", "estacion"], errors="ignore")
+            scaled_data = scaler.fit_transform(datos.values)
 
-        with torch.no_grad():
-            pred_pm10 = model_pm10(X_tensor).cpu().numpy().flatten()
+            window_size = 7
+            X_seq = create_sequences(scaled_data, window_size)
+            X_tensor = torch.tensor(X_seq, dtype=torch.float32)
+            input_dim = X_tensor.shape[2]
+            device = torch.device("cpu")
 
-        model_iras = IRASModel(input_dim=input_dim).to(device)
-        model_iras.load_state_dict(torch.load("modelo_final_IRAS_1_4.pth", map_location=device))
-        model_iras.eval()
+            try:
+                model_pm10 = PM10Model(input_dim=input_dim).to(device)
+                model_pm10.load_state_dict(torch.load("modelo_final_PM10.pth", map_location=device))
+                model_pm10.eval()
+                pred_pm10 = model_pm10(X_tensor).detach().cpu().numpy().flatten()
 
-        with torch.no_grad():
-            pred_iras = model_iras(X_tensor).cpu().numpy().flatten()
+                model_iras = IRASModel(input_dim=input_dim).to(device)
+                model_iras.load_state_dict(torch.load("modelo_final_IRAS_1_4.pth", map_location=device))
+                model_iras.eval()
+                pred_iras = model_iras(X_tensor).detach().cpu().numpy().flatten()
 
-        # --- Resultados ---
-        result_df = df.iloc[window_size - 1:].copy()
-        result_df["Pred_PM10"] = pred_pm10
-        result_df["Pred_IRAS_1_4"] = pred_iras
-        result_df["fecha"] = fechas
+                result_df = df.iloc[window_size - 1:].copy()
+                result_df["Pred_PM10"] = pred_pm10
+                result_df["Pred_IRAS_1_4"] = pred_iras
+                result_df["fecha"] = fechas
 
-        st.subheader("📊 Predicciones")
-        st.dataframe(result_df[["fecha", "Pred_PM10", "Pred_IRAS_1_4"]])
+                st.subheader("📊 Predicciones")
+                st.dataframe(result_df[["fecha", "Pred_PM10", "Pred_IRAS_1_4"]])
 
-        csv_data = result_df.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Descargar predicciones", csv_data, file_name="predicciones_resultado.csv")
+                csv_data = result_df.to_csv(index=False).encode("utf-8")
+                st.download_button("📥 Descargar predicciones", csv_data, file_name="predicciones_resultado.csv")
 
-        # --- Gráficas ---
-        fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-        if "PM10" in result_df.columns:
-            ax[0].plot(result_df["fecha"], result_df["PM10"], label="PM10 Real", linestyle="--")
-        ax[0].plot(result_df["fecha"], result_df["Pred_PM10"], label="PM10 Predicho")
-        ax[0].set_title("PM10")
-        ax[0].legend()
-        ax[0].grid(True)
+                fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+                if "PM10" in result_df.columns:
+                    ax[0].plot(result_df["fecha"], result_df["PM10"], label="PM10 Real", linestyle="--")
+                ax[0].plot(result_df["fecha"], result_df["Pred_PM10"], label="PM10 Predicho")
+                ax[0].set_title("PM10")
+                ax[0].legend()
+                ax[0].grid(True)
 
-        if "IRAS_1_4" in result_df.columns:
-            ax[1].plot(result_df["fecha"], result_df["IRAS_1_4"], label="IRAS Real", linestyle="--")
-        ax[1].plot(result_df["fecha"], result_df["Pred_IRAS_1_4"], label="IRAS Predicho")
-        ax[1].set_title("IRAS 1-4")
-        ax[1].legend()
-        ax[1].grid(True)
+                if "IRAS_1_4" in result_df.columns:
+                    ax[1].plot(result_df["fecha"], result_df["IRAS_1_4"], label="IRAS Real", linestyle="--")
+                ax[1].plot(result_df["fecha"], result_df["Pred_IRAS_1_4"], label="IRAS Predicho")
+                ax[1].set_title("IRAS 1-4")
+                ax[1].legend()
+                ax[1].grid(True)
 
-        st.pyplot(fig)
+                st.pyplot(fig)
 
-    except Exception as e:
-        st.error(f"❌ Error al cargar los modelos o realizar la predicción: {e}")
+            except Exception as e:
+                st.error(f"❌ Error al cargar los modelos o realizar la predicción: {e}")
 
-
-# --- Agradecimientos, descripción e instrucciones ---
+# --- Agradecimientos e info ---
 st.markdown("---")
 st.markdown("### 🧠 Proyecto")
 st.markdown("""
@@ -133,7 +158,6 @@ Además, la app permite:
 - Exportar los resultados predichos
 - Comparar predicciones con valores reales
 - Apoyar la toma de decisiones y estrategias de gestión de riesgos
-
 """)
 
 st.markdown("### 🤝 Agradecimientos")
@@ -147,10 +171,10 @@ Esta app fue desarrollada como parte del proyecto mencionado, con el apoyo del *
 
 st.markdown("### ℹ️ Instrucciones de uso")
 st.markdown("""
-1. Sube un archivo Excel con tus datos de entrada (incluyendo columna `fecha` si deseas visualización temporal).
-2. La app aplicará modelos LSTM para predecir valores de PM10 e IRAS.
-3. Visualiza los resultados en tabla y gráficos interactivos.
-4. Descarga el archivo con resultados si lo necesitas.
+1. Sube un archivo Excel con tus datos de entrada (incluyendo columna `fecha` si deseas visualización temporal), o usa el dataset de ejemplo.
+2. Selecciona el tipo de predicción por periodo o estación.
+3. Da clic en "Ejecutar predicción".
+4. Visualiza y descarga tus resultados.
 """)
 
 st.caption("© 2025 CIATEC A.C. | App desarrollada con Streamlit")
