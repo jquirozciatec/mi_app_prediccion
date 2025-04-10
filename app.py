@@ -5,9 +5,18 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from PIL import Image
 
 st.set_page_config(page_title="Predicción PM10 e IRAS", layout="wide")
-st.title("📊 Predicción de PM10 e IRAS")
+
+# --- Encabezado con logos ---
+col1, col2, col3 = st.columns([1, 6, 1])
+with col1:
+    st.image("LOGO_CIATEC.png", width=100)
+with col2:
+    st.title("📊 Predicción de PM10 e IRAS")
+with col3:
+    st.image("LOGO_INNOVACION.webp", width=100)
 
 # --- Definición de modelos LSTM ---
 class PM10Model(nn.Module):
@@ -60,8 +69,11 @@ df = None
 if archivo:
     df = pd.read_excel(archivo)
 elif usar_ejemplo:
-    df = pd.read_excel("datos_ejemplo.xlsx")  # Archivo de ejemplo disponible localmente
-    st.success("Datos de ejemplo cargados correctamente.")
+    try:
+        df = pd.read_excel("datos_ejemplo.xlsx")
+        st.success("Datos de ejemplo cargados correctamente.")
+    except FileNotFoundError:
+        st.error("⚠️ El archivo 'datos_ejemplo.xlsx' no se encontró. Sube el archivo manualmente o colócalo en el mismo directorio.")
 
 if df is not None:
     df = df.dropna()
@@ -172,6 +184,7 @@ Esta app fue desarrollada como parte del proyecto mencionado, con el apoyo del *
 st.markdown("### ℹ️ Instrucciones de uso")
 st.markdown("""
 1. Sube un archivo Excel con tus datos de entrada (incluyendo columna `fecha` si deseas visualización temporal), o usa el dataset de ejemplo.
+1.1 Si usas verción movil, localiza la flecha del lado izqquierdo superior que desplejas las opciones de paso 1.
 2. Selecciona el tipo de predicción por periodo o estación.
 3. Da clic en "Ejecutar predicción".
 4. Visualiza y descarga tus resultados.
